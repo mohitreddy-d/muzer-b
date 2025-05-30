@@ -13,7 +13,9 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/music-queue-system/internal/auth"
+	"github.com/music-queue-system/internal/player"
 	"github.com/music-queue-system/internal/room"
+	"github.com/music-queue-system/internal/search"
 	"github.com/music-queue-system/internal/spotify"
 	"github.com/music-queue-system/internal/ws"
 	"github.com/music-queue-system/pkg/database"
@@ -51,10 +53,10 @@ func main() {
 		DB:       0,
 	})
 
-	// Initialize Kafka client
+	// Initialize Kafka client – writer without fixed topic
 	kafkaClient := events.NewKafkaClient(
 		strings.Split(os.Getenv("KAFKA_BROKERS"), ","),
-		"music-queue-events",
+		"music-queue-events", // reader subscribes to this umbrella topic
 		os.Getenv("KAFKA_GROUP_ID"),
 	)
 
@@ -72,6 +74,8 @@ func main() {
 	authHandler := auth.NewHandler(spotifyClient, tokenStore)
 	roomHandler := room.NewHandler(roomService)
 	wsHandler := ws.NewHandler(kafkaClient)
+	playerHandler := player.NewHandler(spotifyClient, tokenStore)
+	searchHandler := search.NewHandler(spotifyClient)
 
 	// Initialize Gin router
 	router := gin.Default()
@@ -115,6 +119,12 @@ func main() {
 
 		// WebSocket endpoint
 		protected.GET("/ws/:roomId", wsHandler.HandleWebSocket)
+
+		// Player control routes (/api/v1/me/player/...)
+		meRoutes := protected.Group("/me")
+		playerHandler.RegisterRoutes(meRoutes)
+
+		searchHandler.RegisterRoutes(protected)
 	}
 	// Serve frontend static files and SPA fallback
 	router.NoRoute(func(c *gin.Context) {
